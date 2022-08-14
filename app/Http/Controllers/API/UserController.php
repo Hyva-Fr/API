@@ -4,9 +4,11 @@ namespace App\Http\Controllers\API;
 
 use App\Http\Controllers\Controller;
 use App\Models\User;
+use App\Models\Agency;
 use Illuminate\Http\Request;
 use App\Http\Requests\UserStoreRequest;
 use App\Http\Resources\UserResource;
+use Auth;
 
 class UserController extends Controller
 {
@@ -17,37 +19,17 @@ class UserController extends Controller
      */
     public function index()
     {
+        if (Auth::user()->employed == 0) {
+            return abort(404);
+        }
+
         // On récupère tous les utilisateurs
-        $users = User::paginate(10);
+
+        $agency = Agency::where(['id'=> Auth::user()->agency_id])->first();
+        $users = User::where(['agency_id' => $agency->id, 'employed' => 1])->paginate(10);
 
         // On retourne les informations des utilisateurs en JSON
         return UserResource::collection($users);
-    }
-
-    /**
-     * Store a newly created resource in storage.
-     *
-     * @param  \Illuminate\Http\Request  $request
-     * @return \Illuminate\Http\Response
-     */
-    public function store(UserStoreRequest $request)
-    {
-        // La validation de données
-        $this->validate($request, [
-            'name' => 'required|max:100',
-            'email' => 'required|email|unique:users',
-            'password' => 'required|min:8'
-        ]);
-
-        // On crée un nouvel utilisateur
-        $user = User::create([
-            'name' => $request->name,
-            'email' => $request->email,
-            'password' => bcrypt($request->password)
-        ]);
-
-        // On retourne les informations du nouvel utilisateur en JSON
-        return response()->json($user, 201);
     }
 
     /**
@@ -58,49 +40,33 @@ class UserController extends Controller
      */
     public function show(User $user)
     {
+        if (Auth::user()->employed == 0) {
+            return abort(404);
+        }
+        
         // On retourne les informations de l'utilisateur en JSON
-        return new UserResource($user);
-    }
+        $agency = Agency::select(
+            'agencies.name',
+            'agencies.street',
+            'agencies.zip',
+            'agencies.city',
+            'states.name as state',
+            'states.code as state_code',
+            'countries.name as country',
+            'zones.name as zone',
+        )
+            ->where('agencies.id', Auth::user()->agency_id)
+            ->join('states', 'agencies.state_id', '=', 'states.id')
+            ->join('countries', 'states.country_id', '=', 'countries.id')
+            ->join('zones', 'countries.zone_id', '=', 'zones.id')
+            ->first();
 
-    /**
-     * Update the specified resource in storage.
-     *
-     * @param  \Illuminate\Http\Request  $request
-     * @param  \App\Models\User  $user
-     * @return \Illuminate\Http\Response
-     */
-    public function update(UserStoreRequest $request, User $user)
-    {
-        // La validation de données
-        $this->validate($request, [
-            'name' => 'required|max:100',
-            'email' => 'required|email',
-            'password' => 'required|min:8'
+        return response()->json([
+            'message' => 'ok',
+            'id' => $user->id,
+            'name' => $user->name,
+            'email' => $user->email,
+            'agency' => $agency
         ]);
-
-        // On modifie les informations de l'utilisateur
-        $user->update([
-            "name" => $request->name,
-            "email" => $request->email,
-            "password" => bcrypt($request->password)
-        ]);
-
-        // On retourne la réponse JSON
-        return response()->json();
-    }
-
-    /**
-     * Remove the specified resource from storage.
-     *
-     * @param  \App\Models\User  $user
-     * @return \Illuminate\Http\Response
-     */
-    public function destroy(User $user)
-    {
-        // On supprime l'utilisateur
-        $user->delete();
-
-        // On retourne la réponse JSON
-        return response()->json();
     }
 }
